@@ -182,14 +182,16 @@ class STFTLoss(torch.nn.Module):
 
         # normalize scales
         if self.scale_invariance:
-            alpha = (x_mag * y_mag).sum([-2, -1]) / ((y_mag ** 2).sum([-2, -1]))
+            alpha = (x_mag * y_mag).sum([-2, -1]) / \
+                ((y_mag ** 2).sum([-2, -1]))
             y_mag = y_mag * alpha.unsqueeze(-1)
 
         # compute loss terms
         sc_mag_loss = self.spectralconv(x_mag, y_mag) if self.w_sc else 0.0
         log_mag_loss = self.logstft(x_mag, y_mag) if self.w_log_mag else 0.0
         lin_mag_loss = self.linstft(x_mag, y_mag) if self.w_lin_mag else 0.0
-        phs_loss = torch.nn.functional.mse_loss(x_phs, y_phs) if self.w_phs else 0.0
+        phs_loss = torch.nn.functional.mse_loss(
+            x_phs, y_phs) if self.w_phs else 0.0
 
         # combine loss terms
         loss = (
@@ -314,7 +316,8 @@ class MultiResolutionSTFTLoss(torch.nn.Module):
         **kwargs,
     ):
         super(MultiResolutionSTFTLoss, self).__init__()
-        assert len(fft_sizes) == len(hop_sizes) == len(win_lengths)  # must define all
+        assert len(fft_sizes) == len(hop_sizes) == len(
+            win_lengths)  # must define all
         self.fft_sizes = fft_sizes
         self.hop_sizes = hop_sizes
         self.win_lengths = win_lengths
@@ -418,29 +421,14 @@ class RandomResolutionSTFTLoss(torch.nn.Module):
         self.n_mels = n_mels
 
         self.nforwards = 0
-        self.randomize_losses()  # init the losses
-
-    def randomize_losses(self):
-        # clear the existing STFT losses
         self.stft_losses = torch.nn.ModuleList()
-        for n in range(self.resolutions):
-            frame_size = 2 ** np.random.randint(
-                np.log2(self.min_fft_size), np.log2(self.max_fft_size)
-            )
-            hop_size = int(
-                frame_size
-                * (
-                    self.min_hop_size
-                    + (np.random.rand() * (self.max_hop_size - self.min_hop_size))
-                )
-            )
-            window_length = int(frame_size * np.random.choice([1.0, 0.5, 0.25]))
-            window = np.random.choice(self.windows)
+        for _ in range(self.resolutions):
+            fft_size, hop_size, win_length, window = self.randomize_params()
             self.stft_losses += [
                 STFTLoss(
-                    frame_size,
+                    fft_size,
                     hop_size,
-                    window_length,
+                    win_length,
                     window,
                     self.w_sc,
                     self.w_log_mag,
@@ -452,6 +440,30 @@ class RandomResolutionSTFTLoss(torch.nn.Module):
                     **kwargs,
                 )
             ]
+
+    def randomize_params(self):
+        fft_size = 2 ** np.random.randint(
+            np.log2(self.min_fft_size), np.log2(self.max_fft_size)
+        )
+        hop_size = int(
+            fft_size
+            * (
+                self.min_hop_size
+                + (np.random.rand() * (self.max_hop_size - self.min_hop_size))
+            )
+        )
+        win_length = int(
+            fft_size * np.random.choice([1.0, 0.5, 0.25]))
+        window = np.random.choice(self.windows)
+        return fft_size, hop_size, win_length, window
+
+    def randomize_losses(self):
+        for module in self.resolutions:
+            fft_size, hop_size, win_length, window = self.randomize_params()
+            module.fft_size = fft_size
+            module.hop_size = hop_size
+            module.win_length = win_length
+            module.window = getattr(torch, window)(win_length)
 
     def forward(self, input, target):
         if input.size(-1) <= self.max_fft_size:
@@ -515,7 +527,8 @@ class SumAndDifferenceSTFTLoss(torch.nn.Module):
         self.w_sum = 1.0
         self.w_diff = 1.0
         self.output = output
-        self.mrstft = MultiResolutionSTFTLoss(fft_sizes, hop_sizes, win_lengths, window)
+        self.mrstft = MultiResolutionSTFTLoss(
+            fft_sizes, hop_sizes, win_lengths, window)
 
     def forward(self, input, target):
         input_sum, input_diff = self.sd(input)
