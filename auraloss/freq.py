@@ -458,7 +458,7 @@ class RandomResolutionSTFTLoss(torch.nn.Module):
         return fft_size, hop_size, win_length, window
 
     def randomize_losses(self):
-        for module in self.resolutions:
+        for module in self.stft_losses:
             fft_size, hop_size, win_length, window = self.randomize_params()
             module.fft_size = fft_size
             module.hop_size = hop_size
